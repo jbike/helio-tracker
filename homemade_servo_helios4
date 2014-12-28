@@ -82,7 +82,7 @@ int Second=Clock.getSecond();
   Serial.print("  Day_of_week:");
   Serial.println(DoW, DEC);
 
-helios.calcSunPos(Year,Month,Date,Hour,Minute,Second,-117.9731,33.9251); 
+helios.calcSunPos(Year,Month,Date,Hour,Minute,Second,-118.2500,34.0500); 
 
 dAzimuth=helios.dAzimuth; 
 dElevation=helios.dElevation;  
