@@ -1,0 +1,211 @@
+/* 
+ *  Also see http://misclab.umeoce.maine.edu/boss/Arduino/bensguides/DS3231_Arduino_Clock_Instructions.pdf
+Sun tracker aims solar array using Real Time Clock I2C module DS3231. Arduino Pro Mini micro controller.
+SN754410 dual H bridge motor driver ic. Elevation motor long shaft 6 volt 10 rpm micro motor with precision 10k,
+ball bearing feedback potientiometer. Azimuth motor Tokyo 60 rpm at 12 volts gear micro motor, coupled to 10T/136T
+toy helicopter reduction gear, shaft spindle connected to precision 10k feedback potientiometer.
+Helios library calculates Azimuth and Elevation. Custom made servos track the Azimuth and Elevation data.
+CustomServo library -electro18 (Tanay P.)
+pin connection :
+motor driver input 1 : pin 5
+motor driver input 2 : pin 6
+motor driver input2 1 : pin 9 // added second servo -John Mc
+motor driver input2 2 : pin 10 //added second servo
+Servo feedback pin   : analog 0 & analog 2
+test pot pin : analog 1 (for calibration)
+servo / pot pins to +5 and gnd on arduino
+
+DS3231 library by -Eric Ayars updated & simplified to 24 hr only - John Mc
+http://cerebralmeltdown.com/forum/index.php?topic=325.0 SunTracker_Heliostat_Program_V097.zip  Gabriel Miller
+Compare against online sun tracker:
+http://www.sunearthtools.com/dp/tools/pos_sun.php
+Faster PWM for quiet operation:
+http://playground.arduino.cc/Main/TimerPWMCheatsheet
+And modified the line in the wiring.c function in the Arduino program files
+hardware\arduino\cores\arduino\wiring.c :
+#define MICROSECONDS_PER_TIMER0_OVERFLOW (clockCyclesToMicroseconds(1 * 510))
+*/
+
+#include <Wire.h>    // for I2C communication with clock module
+#include <Helios.h>  // calculates sun Azimuth and Elevation
+
+#include <DS3231.h>  // I2C clock module library
+
+#include <CustomServo.h>  // custom servo library
+//
+#include <SPI.h>
+//#include <Adafruit_GFX.h>
+//#include <Adafruit_PCD8544.h>
+
+Helios helios;
+DS3231 Clock;
+
+bool Century = true;  // after yr 2000
+bool h24;
+bool AM;
+double dAzimuth;
+double dElevation;
+
+int angle;    // angle by which the servo will rotate
+int Ssecond;  // store prevous value of second
+int Year;
+int Month;
+int Date;
+int DoW;
+double Hour;    //24 hour clock////
+double Minute;  /////
+double Second;  /////
+int DST;
+int LclHour;
+int LclDate;
+const int btn = 12;  //daylight sensor
+int sensorValue;
+int sensorValue2;
+
+CServo servo1(5, 6, 0);    // initialize the servo with CServo myservo( pin 1 , pin 2 , analog feedback pin ) pin 1,2  may be analogWrite or digitalWrite depending on direction
+CServo servo2(11, 10, 2);  //9,10
+//Adafruit_PCD8544 display = Adafruit_PCD8544(2, 3, 4, 7, 8);
+#define NUMFLAKES 10
+#define XPOS 0
+#define YPOS 1
+#define DELTAY 2
+unsigned long previousMillis = 0;  // will store last time LED was updated
+const long interval = 1000;        //delay before print
+int flag = 0;
+
+void setup() {
+  pinMode(btn, INPUT_PULLUP);
+  TCCR0A = _BV(COM0A1) | _BV(COM0B1) | _BV(WGM00);
+  TCCR0B = _BV(CS00);  //phase correct 31 kHz, for pwm pins 5&6
+  // and
+  TCCR1B = TCCR1B & 0b11111000 | 0x01;  //phase correct 31 kHz, for pins 9 and 10
+                                        // Start the I2C interface
+  Wire.begin();
+  Serial.begin(115200);  // setup serial connection
+}
+
+void loop() {
+  Time();
+  int button = digitalRead(btn);
+  while (button == LOW) {
+    Time();
+    sensToAZ_EL();
+    if (Second != Ssecond) {
+      Ssecond = Second;
+      unsigned long currentMillis = millis();
+
+      if (currentMillis - previousMillis >= interval && flag == 0) {
+        previousMillis = currentMillis;
+        flag = 1;
+        printIt();
+      }
+      button = digitalRead(btn);
+    }
+
+    sensToAZ_EL();
+
+    servo1.drive(sensorValue);  // drive the servo using myservo.drive( angle ) where   0 <= angle <= 160
+    servo2.drive(sensorValue2);
+  }
+}
+void printIt() {
+  // ********************* Calculate offset for Sunday *********************
+  int y = Year;                 // DS3231 uses two digit year (required here)
+  int x = (y + y / 4 + 2) % 7;  // remainder will identify which day of month
+  // is Sunday by subtracting x from the one
+  // or two week window. First two weeks for March
+  // and first week for November
+  // *********** Test DST: BEGINS on 2nd Sunday of March @ 2:00 AM *********
+  if (Month == 3 && Date == (14 - x) && Hour >= 2) {
+
+    DST = 1;  // Daylight Savings Time is TRUE (add one hour)
+  }
+  if ((Month == 3 && Date > (14 - x)) || Month > 3) {
+
+    DST = 1;
+  }
+  // ************* Test DST: ENDS on 1st Sunday of Nov @ 2:00 AM ************
+  if (Month == 11 && Date == (7 - x) && Hour >= 2) {
+
+    DST = 0;  // daylight savings time is FALSE (Standard time)
+  }
+
+  if ((Month == 11 && Date > (7 - x)) || Month > 11 || Month < 3) {
+
+    DST = 0;
+  }
+  if (DST == 1) {               // Test DST and add one hour if = 1 (TRUE)
+    if (Hour - 7 < 0) {         // UTC - 7 is next day
+      LclHour = Hour - 7 + 24;  // lcl hour now
+      LclDate = Date - 1;
+    } else if (Hour - 7 >= 0) {  // UTC - 7 is next day
+      LclHour = Hour - 7;        // lcl hour now
+      LclDate = Date;            //Date is same  /////////////////////
+    }
+  }
+
+  if (DST == 0) {        // Test DST if = 0 (FALSE)
+    if (Hour - 8 < 0) {  // lcl hour now
+      LclHour = Hour - 8 + 24;
+      LclDate = Date - 1;
+    } else if (Hour - 8 >= 0) {  // UTC - 7 is next day
+      LclHour = Hour - 8;        // lcl hour now //////////////////
+      LclDate = Date;            //Date is same
+    }
+  }
+
+  Serial.print(dElevation, 2);
+  Serial.print(",");
+  Serial.print(dAzimuth, 2);
+  Serial.print(",");
+  Serial.print((int)LclHour);
+  Serial.print(",");
+  Serial.print((int)Minute);
+  Serial.print(",");
+  Serial.print((int)Second);
+  Serial.print(",");
+  Serial.print(Month);
+  Serial.print(",");
+  Serial.print(LclDate);
+  Serial.print(",");
+  Serial.print(Year);
+  Serial.print(",");
+  Serial.print(int(Hour));
+  Serial.print(",");
+  Serial.print(int(Minute));
+  Serial.print(",");
+  Serial.print(int(Second));
+  Serial.print(",");
+  Serial.print(Month);
+  Serial.print(",");
+  Serial.print(Date);
+  Serial.print(",");
+  Serial.print(Year);
+  Serial.println();  // sends a ASCII line feed
+}
+
+void sensToAZ_EL() {
+  helios.calcSunPos(Year, Month, Date, Hour, Minute, Second, -117.9731, 33.9251);
+  //helios.calcSunPos(23,8,30,03,25,00,-117.9731,33.9251);
+  dAzimuth = helios.dAzimuth;
+  dElevation = helios.dElevation;
+  sensorValue = dElevation;
+  if (sensorValue < 0) {
+    sensorValue = 90;  //park panel overhead at night
+  }
+  sensorValue2 = dAzimuth;
+
+  sensorValue2 = sensorValue2 + 36;                  // set the offset of the azimuth servo
+  sensorValue2 = map(sensorValue2, 360, 0, 0, 165);  // set the range of azimuth servo
+  sensorValue = sensorValue + 12;                    // set the offset of the elevation servo
+  sensorValue = map(sensorValue, 170, 0, 0, 85);     // set the range of elevation servo
+}
+void Time() {
+  Year = Clock.getYear();
+  Month = Clock.getMonth(Century);
+  Date = Clock.getDate();
+  DoW = Clock.getDoW();
+  Hour = Clock.getHour(h24, AM);  //24 hour clock
+  Minute = Clock.getMinute();
+  Second = Clock.getSecond();
+}
