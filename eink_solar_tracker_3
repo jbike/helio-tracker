@@ -1,0 +1,146 @@
+#include <GxEPD2_BW.h>
+#include <GxEPD2_3C.h>
+#include <GxEPD2_7C.h>
+#include <Fonts/FreeMonoBold9pt7b.h>
+#include <U8g2_for_Adafruit_GFX.h>
+//GxEPD2_BW<GxEPD2_213_GDEY0213B74, GxEPD2_213_GDEY0213B74::HEIGHT> display(GxEPD2_213_GDEY0213B74(SS, 0, 2, 4));
+#include "GxEPD2_display_selection_new_style.h"
+char LocalDateTime[60];
+char UTdateTime[60];
+U8G2_FOR_ADAFRUIT_GFX u8g2Fonts;
+uint16_t bg = GxEPD_WHITE;
+uint16_t fg = GxEPD_BLACK;
+
+void setup() {
+  Serial.begin(115200);
+  display.init(115200, true, 2, false);
+  u8g2Fonts.begin(display);  // connect u8g2 procedures to Adafruit GFX
+  display.hibernate();
+}
+
+void loop() {
+  if (Serial.available()) {
+    String input = Serial.readStringUntil('\n');
+    // Parse the incoming data, assuming it is in the format "float1,float2,hours,minutes,seconds,month,day,year,local_hours,local_minutes,local_seconds,local_month,local_day,local_year"
+    int commaIndex1 = input.indexOf(',');
+    int commaIndex2 = input.indexOf(',', commaIndex1 + 1);
+    int commaIndex3 = input.indexOf(',', commaIndex2 + 1);
+    int commaIndex4 = input.indexOf(',', commaIndex3 + 1);
+    int commaIndex5 = input.indexOf(',', commaIndex4 + 1);
+    int commaIndex6 = input.indexOf(',', commaIndex5 + 1);
+    int commaIndex7 = input.indexOf(',', commaIndex6 + 1);
+    int commaIndex8 = input.indexOf(',', commaIndex7 + 1);
+    int commaIndex9 = input.indexOf(',', commaIndex8 + 1);
+    int commaIndex10 = input.indexOf(',', commaIndex9 + 1);
+    int commaIndex11 = input.indexOf(',', commaIndex10 + 1);
+    int commaIndex12 = input.indexOf(',', commaIndex11 + 1);
+    int commaIndex13 = input.indexOf(',', commaIndex12 + 1);
+
+    if (commaIndex1 != -1 && commaIndex2 != -1 && commaIndex3 != -1 && commaIndex4 != -1 && commaIndex5 != -1 && commaIndex6 != -1 && commaIndex7 != -1 && commaIndex8 != -1 && commaIndex9 != -1 && commaIndex10 != -1 && commaIndex11 != -1 && commaIndex12 != -1 && commaIndex13 != -1) {
+      // Extract float values from input
+      String float1Str = input.substring(0, commaIndex1);
+      String float2Str = input.substring(commaIndex1 + 1, commaIndex2);
+      float float1 = float1Str.toFloat();
+      float float2 = float2Str.toFloat();
+
+      // Extract other data
+      String localHours = input.substring(commaIndex2 + 1, commaIndex3);
+      String localMinutes = input.substring(commaIndex3 + 1, commaIndex4);
+      String localSeconds = input.substring(commaIndex4 + 1, commaIndex5);
+      String localMonth = input.substring(commaIndex5 + 1, commaIndex6);
+      String localDay = input.substring(commaIndex6 + 1, commaIndex7);
+      String localYear = input.substring(commaIndex7 + 1, commaIndex8);
+
+      String UThours = input.substring(commaIndex8 + 1, commaIndex9);
+      String UTminutes = input.substring(commaIndex9 + 1, commaIndex10);
+      String UTseconds = input.substring(commaIndex10 + 1, commaIndex11);
+      String UTmonth = input.substring(commaIndex11 + 1, commaIndex12);
+      String UTday = input.substring(commaIndex12 + 1, commaIndex13);
+      String UTyear = input.substring(commaIndex13 + 1);
+
+      // Convert minutes and seconds to integers and add leading "0" if needed
+      int intUTminutes = UTminutes.toInt();
+      int intUTseconds = UTseconds.toInt();
+      int intLocalMinutes = localMinutes.toInt();
+      int intLocalSeconds = localSeconds.toInt();
+      if (intLocalMinutes < 10) {
+        localMinutes = "0" + String(intLocalMinutes);
+      }
+      if (intLocalSeconds < 10) {
+        localSeconds = "0" + String(intLocalSeconds);
+      }
+      String LocalDateTime = ("LCL: " + localHours + ":" + localMinutes + ":" + localSeconds + "     Date: " + localMonth + "/" + localDay + "/" + localYear);
+
+      if (intUTminutes < 10) {
+        UTminutes = "0" + UTminutes;
+      }
+      if (intUTseconds < 10) {
+        UTseconds = "0" + String(intUTseconds);
+      }
+      String UTdateTime = ("UTC: " + UThours + ":" + UTminutes + ":" + UTseconds + "     Date: " + UTmonth + "/" + UTday + "/" + UTyear);
+      
+      int AM_PM = 0;  // 0 = "AM" and 1 = "PM"
+      int LclHr = localHours.toInt();
+      if (localHours.toInt() == 0) {
+        LclHr = 12;AM_PM = 0;
+      }
+      if (localHours.toInt() == 13) {
+        LclHr = 1;AM_PM = 1;
+      }
+      if (localHours.toInt() == 12) {
+        AM_PM = 1;
+      }
+      if (localHours.toInt() > 13) {
+        LclHr = LclHr - 12;
+        AM_PM = 1;
+      } 
+      u8g2Fonts.setFontMode(1);
+      //u8g2Fonts.setFontMode(1);
+      //u8g2Fonts.setFont(u8g2_font_inb49_mr);  // select u8g2 font from here: https://github.com/olikraus/u8g2/wiki/fn
+      //u8g2Fonts.setFont(u8g2_font_inr42_mn);
+      //display.setTextColor(GxEPD_BLACK);
+      //int16_t tbx, tby;
+      //uint16_t tbw, tbh;
+      u8g2Fonts.setForegroundColor(fg);  // apply Adafruit GFX color
+      u8g2Fonts.setBackgroundColor(bg);  // apply Adafruit GFX color
+      display.setRotation(1);
+      display.setFullWindow();
+      display.firstPage();
+
+      do {
+        //display.fillScreen(fg); //GxEPD_WHITE;
+        //display.setFont(&FreeMonoBold9pt7b);
+        //display.setCursor(0, 20);  // Adjust the vertical position for the first line
+        //display.print("Elev: ");
+        u8g2Fonts.setCursor(8, 35);            // Adjust the vertical position for the first line
+        u8g2Fonts.setFont(u8g2_font_fub30_tf);  // select u8g2 font from here: https://github.com/olikraus/u8g2/wiki/fn
+        u8g2Fonts.print(float1, 1);             // Display float value on line 1
+        u8g2Fonts.setFont(u8g2_font_fub14_tf); //u8g2_font_lubR14_tf; //u8g2_font_lubR12_te;
+        u8g2Fonts.print(" Elev  ");
+        //u8g2Fonts.setFont(u8g2_font_inr21_mn);
+        u8g2Fonts.setFont(u8g2_font_fub30_tf);
+        u8g2Fonts.print(float2, 1);
+        u8g2Fonts.setFont(u8g2_font_fub14_tf);
+        u8g2Fonts.print(" Az");
+        u8g2Fonts.setCursor(90, 80);
+        u8g2Fonts.setFont(u8g2_font_fub30_tf);
+        u8g2Fonts.print(LclHr);
+        u8g2Fonts.print(":");
+        u8g2Fonts.print(localMinutes);
+        u8g2Fonts.setFont(u8g2_font_fub14_tf);
+        if(AM_PM == 0){u8g2Fonts.print(" AM"); }
+        else {u8g2Fonts.print(" PM"); }
+        u8g2Fonts.setFont(u8g2_font_7x14B_mr);
+        u8g2Fonts.setCursor(40, 110);
+        //display.setCursor(0, 50);  // Adjust the vertical position for the second line
+        //display.print("AZ:   ");
+        //display.print(float2);  // Display float value on line 2
+        //display.setCursor(0, 80);  // Adjust the vertical position for the third line
+        u8g2Fonts.print(LocalDateTime);  // Display line 3
+        u8g2Fonts.setCursor(40, 125);  // Adjust the vertical position for the fourth line
+        u8g2Fonts.print(UTdateTime);  // Display line 4
+        display.display();
+      } while (display.nextPage());
+    }
+  }
+}
